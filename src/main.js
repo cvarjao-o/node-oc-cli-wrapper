@@ -1,5 +1,8 @@
 'use strict';
-const {spawn} = require('child_process');
+const {spawn, spawnSync} = require('child_process');
+const path = require('path');
+const crypto = require('crypto')
+const fs = require('fs');
 
 function asArray(args){
   if (args instanceof Array) return args;
@@ -17,6 +20,51 @@ function asArray(args){
     }
   }
   return result
+}
+
+//https://stackoverflow.com/questions/9781218/how-to-change-node-jss-console-font-color
+function warn(args){
+  console.log('\x1b[31m', args ,'\x1b[0m');
+}
+
+//https://stackoverflow.com/questions/9781218/how-to-change-node-jss-console-font-color
+function die(args){
+  console.log('\x1b[31m', args ,'\x1b[0m');
+  console.log('\x1b[31m', 'Exited!' ,'\x1b[0m');
+  process.exit(1)
+}
+
+function check_prerequisites(){
+  var proc=spawnSync('oc', ['whoami'])
+  var errors = ''
+  //console.log(`oc (exit code = ${proc.status})`)
+  if (proc.status == 0){
+    //no-op
+  }else if (proc.status == 1){
+    errors+="Not authenticated (oc whoami) (exit code = 1)\n"
+  }else if (proc.status == 127){
+    errors+="'oc' command not found (exit code = 127)\n"
+  }else if (proc.status == 126){
+    errors+="'oc' command found, but not executable (exit code = 126)\n"
+  }else{
+    errors+=`Error tryng to run oc (exit code = ${proc.status}):\n`
+    errors+='  stdout:'+proc.stdout+'\n'
+    errors+='  stderr:'+proc.stderr+'\n'
+  }
+
+  var proc2=spawnSync('git', ['version'])
+  //console.log(`git (exit code = ${proc2.status})`)
+  if (proc2.status == 0){
+    //no-op
+  }else{
+    errors+=`Error trying to run git (exit code = ${proc2.status})\n`
+    errors+='stdout:'+proc2.stdout+'\n'
+    errors+='stderr:'+proc2.stderr+'\n'
+  }
+
+  if (errors.length > 0){
+    throw `Prerequisites not met!\n${errors}`
+  }
 }
 
 function _oc (client) {
@@ -44,13 +92,28 @@ function _oc (client) {
 }
 
 function ocProcess (client) {
-  return function create (args = []) {
-    const _args=['process', '--output=json'].concat(asArray(args))
-    return client._raw(_args).then((result)=>{
-      let items=JSON.parse(result.stdout)
-      
-      return items;
-    });
+  return function create (args) {
+    let items=[]
+    let templates=[]
+
+    if (args instanceof Array){
+      templates.push(...args)
+    }else{
+      templates.push(args)
+    }
+
+    return templates.reduce((chain, template)=>{
+      return chain.then(()=>{
+        const _args=['process', '--output=json'].concat(asArray(template))
+
+        return client._raw(_args).then((result)=>{
+          let output=JSON.parse(result.stdout)
+          items.push(...output.items)
+        });
+      })
+    }, Promise.resolve()).then(result => {
+      return Promise.resolve({'kind':'List', 'items':items, 'metadata':{'annotations':{'namespace':client.settings.options.namespace}}})
+    })
   };
 }
 
@@ -89,16 +152,169 @@ function ocApply (client) {
     });
   };
 }
+const CONSTANTS = Object.freeze({
+  KINDS: {
+    LIST: 'List',
+    BUILD_CONFIG: 'BuildConfig',
+    IMAGE_STREAM: 'ImageStream',
+    IMAGE_STREAM_TAG: 'ImageStreamTag'
+  },
+  ANNOTATIONS: {
+    TEMPLATE_HASH: 'config-hash',
+    SOURCE_HASH: 'source-hash'
+  }
+});
+
+function gitHashObject(resource){
+  var shasum = crypto.createHash('sha1');
+  var itemAsString = JSON.stringify(resource)
+  shasum.update(`blob ${itemAsString.length + 1}\0${itemAsString}\n`);
+  return shasum.digest('hex');
+}
+
+const resource_transformers = {
+  ENSURE_METADATA: (resource, container, client)=>{
+    resource.metadata = resource.metadata || {}
+    resource.metadata.labels = resource.metadata.labels || {}
+    resource.metadata.annotations = resource.metadata.annotations || {}
+  },
+  ENSURE_METADATA_NAMESPACE: (resource, container, client)=>{
+    resource.metadata.namespace = resource.metadata.namespace || container.namespace
+  },
+  ADD_CHECKSUM_LABEL: (resource)=>{
+    resource.metadata.labels[CONSTANTS.ANNOTATIONS.TEMPLATE_HASH] = gitHashObject(resource)
+  },
+  REMOVE_BUILD_CONFIG_TRIGGERS: (resource)=>{
+    if (resource.kind === CONSTANTS.KINDS.BUILD_CONFIG) {
+      if (resource.spec.triggers && resource.spec.triggers.length > 0){
+        warn(`WARN: '${resource.kind}/${resource.metadata.name}' .spec.triggers are being removed and will be managed by this build script`)
+      }
+      resource.spec.triggers = []
+    }
+  },
+  ADD_SOURCE_HASH: (resource)=>{
+    if (resource.kind === CONSTANTS.KINDS.BUILD_CONFIG) {
+      //ugly way of guarantee safe navigation (nullable object within a path. e.g.: `resource.spec.source`)
+      var contextDir=(((resource || {}).spec || {}).source || {}).contextDir || ''
+      var sourceHash = null;
+
+      if (resource.spec.source.type === 'Git'){
+        //git tree-hash are more stable than commit-hash
+        sourceHash = spawnSync('git', ['rev-parse', `HEAD:${contextDir}`]).stdout.toString().trim()
+      }else if (resource.spec.source.type === 'Binary'){
+        var rootWorkDir = spawnSync('git', ['rev-parse', '--show-toplevel']).stdout.toString().trim()
+        var absoluteContextDir=path.join(rootWorkDir, contextDir)
+        console.log(`contextDir:${contextDir} \t absoluteContextDir:${absoluteContextDir}`)
+        var hashes=[]
+
+        //find . -type f -exec git hash-object -t blob --no-filters '{}' \;
+        var walk=(start, basedir)=>{
+          var files=fs.readdirSync(absoluteContextDir)
+          var stat = fs.statSync(start);
+          if (stat.isDirectory()) {
+            files.reduce(function (acc, name) {
+              var abspath = path.join(start, name);
+              //hashes.push()
+              if (fs.statSync(abspath).isDirectory()) {
+                walk(abspath, basedir)
+              }else{
+                var hash = spawnSync('git', ['hash-object', '-t', 'blob', '--no-filters', abspath]).stdout.toString().trim()
+                //console.dir({'name':name, 'hash':hash})
+                hashes.push({'name':abspath.substr(basedir.length + 1), 'hash':hash})
+              }
+            }, null)
+          }
+        }
+
+        //collect hash of all files
+        walk(absoluteContextDir, absoluteContextDir)
+        //sort array to remove any OS/FS specific ordering
+        hashes.sort((a,b) =>{
+          if (a.name < b.name)
+            return -1;
+          if (a.name > b.name)
+            return 1;
+          return 0;
+        });
+        //console.dir(hashes)
+        sourceHash = gitHashObject(hashes)
+      }
+
+      //console.log(`sourceHash:${sourceHash} (${contextDir})`)
+      resource.metadata.labels[CONSTANTS.ANNOTATIONS.SOURCE_HASH] = sourceHash;
+    }
+  }
+}
+
+function shortName (resource) {
+  return resource.metadata.name
+}
+function fullName (resource) {
+  return resource.kind + '/' + resource.metadata.name
+}
+
+function startBuilds (client) {
+  return (resources) => {
+    var promises = [];
+    var indexOfBuildConfigByOutputImageStream = new Map()
+    var indexOfBuildConfigByInputImageStream = new Map()
+    var indexOfBuildConfigDependencies = new Map()
+    var deployments = resources.filter((item) => { item.kind === CONSTANTS.KINDS.BUILD_CONFIG })
+
+    deployments.forEach((dc)=>{
+      var buildStrategy = dc.spec.strategy.sourceStrategy;
+      if (dc.spec.strategy.dockerStrategy != null){
+        buildStrategy=dc.spec.strategy.dockerStrategy
+        var dependencies = []
+        if (buildStrategy.from){
+          if (buildStrategy.from.kind === CONSTANTS.KINDS.IMAGE_STREAM_TAG){
+            //HERE
+          }else{
+            die(`Expected '${CONSTANTS.KINDS.IMAGE_STREAM_TAG}' but found '${buildStrategy.from.kind}' in ${fullName(dc)}.strategy.*.from`)
+          }
+        }
+      }
+
+    })
+
+    //Index BuildConfigs and ImageStreams
+    //Ordering of BuildConfigs
+
+    return Promise.all(promises)
+  };
+}
+
+function prepare (client) {
+  return (list) => {
+    return new Promise((resolve, reject) => {
+      if (list.kind != 'List') throw "Expected {kind:'List'}"
+
+      list.items.forEach (item  => {
+        resource_transformers.ENSURE_METADATA(item)
+        resource_transformers.ADD_CHECKSUM_LABEL(item)
+        resource_transformers.ENSURE_METADATA_NAMESPACE(item, list, client)
+        resource_transformers.REMOVE_BUILD_CONFIG_TRIGGERS(item),
+        resource_transformers.ADD_SOURCE_HASH(item)
+      })
+
+      return resolve(list);
+    });
+  };
+}
 
 function openShiftClient (settings = {}) {
   const client = {};
   settings = settings || {}
   settings.options =settings.options || {}
+  
+  check_prerequisites()
 
   client['settings']=settings || {}  
   client['_raw'] = _oc(client)
   client['process'] = ocProcess(client)
   client['apply'] = ocApply(client)
+  client['prepare'] = prepare(client)
+
   return client;
 }
 
