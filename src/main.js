@@ -389,6 +389,7 @@ function openShiftClient (settings = {}) {
   client['apply'] = ocApply(client)
   client['prepare'] = prepare(client)
   client['getSync'] = ocGetSync(client)
+  client['getToFileSync'] = ocGetToFileSync(client)
   client['logsToFileSync'] = ocLogsToFileSync(client)
   
   
