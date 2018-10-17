@@ -397,7 +397,29 @@ function startBuild (client) {
   };
 }
 
+function saveBuildArtifactsToDir (client) {
+  return function create (result, outputDir) {
+    //Collect some of the resources used or produced during build, and save it for later
+    if (!fs.existsSync(outputDir)){
+      fs.mkdirSync(outputDir)
+    }
+    var names = []
+    result.forEach((item)=>{
+      ['buildConfig', 'build', 'imageStreamTag', 'imageStreamImage'].forEach( prop =>{
+        var res=item[prop]
+        if (res){
+          names.push(`${oc.util.fullName(res)}`)
+        }
+      })
+    })
+    oc.getToFileSync({'resources':names}, `${path.join(outputDir, 'build.out.json')}`)
+    result.forEach(item => {
+      oc.logsToFileSync({resource:`${item.build.kind}/${item.build.metadata.name}`, timestamps:'true'}, `${path.join(outputDir, 'build.'+item.build.metadata.name + '.log.txt')}`)
+    });
+  }
+}
 module.exports = exports = {
   startBuild: startBuild,
-  startBuilds: startBuilds
+  startBuilds: startBuilds,
+  saveBuildArtifactsToDir: saveBuildArtifactsToDir
 }
