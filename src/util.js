@@ -8,6 +8,7 @@ const crypto = require('crypto')
 const CONSTANTS = Object.freeze({
   KINDS: {
     LIST: 'List',
+    BUILD: 'Build',
     BUILD_CONFIG: 'BuildConfig',
     IMAGE_STREAM: 'ImageStream',
     IMAGE_STREAM_TAG: 'ImageStreamTag',

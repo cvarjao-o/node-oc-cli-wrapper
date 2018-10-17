@@ -115,9 +115,120 @@ function ocProcess (client) {
     })
   };
 }
+/**
+ * Move all global options (oc options) from source to target. Both objects are modified in-place.
+ * @param {Object} target
+ * @param {Object} source 
+ * @returns {Object} The modified target object
+ */
+function moveGlobalOptions (target, source) {
+  const whitelist=['as', 'as-group', 'cache-dir', 'context', 'config', 'loglevel', 'namespace', 'v']
+  for (var prop in source) {
+    // skip  loop if the property is from prototype
+    if(!source.hasOwnProperty(prop)) continue;
+    if (whitelist.indexOf(prop) >=0){
+      target[prop]=source[prop]
+      delete source[prop]
+    }
+  }
+  return target
+}
+
+function ocLogsToFileSync (client) {
+  return function create (args = {}, filepath) {
+    //resource is a special parameter
+    const globalOptions =  moveGlobalOptions(Object.assign({}, client.settings.options), args)
+    const opt =  Object.assign({}, args)
+    const resources = opt.resource || opt.resources || opt.names
+    const names = []
+    if (resources){
+      if (resources instanceof Array){
+        names.push(...resources)
+      }else{
+        names.push(resources)
+      }
+    }
+
+    delete opt.resource
+    delete opt.resources
+    delete opt.names
+    const cmdArgs = asArray(globalOptions).concat(['logs'], names, asArray(opt))
+    logger.trace('ocLogsSync', ['oc'].concat(cmdArgs).join(' '))
+    const process=spawnSync('oc', cmdArgs, {'cwd':client.settings.cwd, encoding:'utf-8'})
+    
+    fs.writeFileSync(filepath, process.stdout.trim())
+
+    return filepath
+  }
+}
+
+function ocLogsSync (client) {
+  return function create (args = {}) {
+    //resource is a special parameter
+    const globalOptions =  moveGlobalOptions(Object.assign({}, client.settings.options), args)
+    const opt =  Object.assign({}, args)
+    const resources = opt.resource || opt.resources || opt.names
+    const names = []
+    if (resources){
+      if (resources instanceof Array){
+        names.push(...resources)
+      }else{
+        names.push(resources)
+      }
+    }
+
+    delete opt.resource
+    delete opt.resources
+    delete opt.names
+    const cmdArgs = asArray(globalOptions).concat(['logs'], names, asArray(opt))
+    logger.trace('ocLogsSync', ['oc'].concat(cmdArgs).join(' '))
+    const process=spawnSync('oc', cmdArgs, {'cwd':client.settings.cwd, encoding:'utf-8'})
+    return process.stdout.trim()
+  }
+}
+
+function ocGetToFileSync (client) {
+  return function create (args = {}, filepath) {
+    const content=ocGetSync(args)
+    fs.writeFileSync(filepath, content)
+    return filepath
+  }
+}
+
+function ocGetSync (client) {
+  return function create (args = {}) {
+    //resource is a special parameter
+    const globalOptions =  moveGlobalOptions(Object.assign({}, client.settings.options), args)
+    const opt =  Object.assign({'output':'json'}, args)
+    const resources = opt.resource || opt.resources
+    const names = []
+    if (resources){
+      if (resources instanceof Array){
+        names.push(...resources)
+      }else{
+        names.push(resources)
+      }
+    }
+
+    delete opt.resource
+    delete opt.resources
+    const cmdArgs = asArray(globalOptions).concat(['get'], names, asArray(opt))
+    logger.trace('ocGetSync', ['oc'].concat(cmdArgs).join(' '))
+    const process=spawnSync('oc', cmdArgs, {'cwd':client.settings.cwd, encoding:'utf-8'})
+
+    return process.stdout.trim()
+  }
+}
+
 
 function ocApply (client) {
-  return function create (args = []) {
+  /**
+   * @member apply
+   * @function
+   * @param args {(Object|Object[])}
+   * @returns {Promise} Array of resources created or updated
+   */
+  var create = function (args = []) {
     var stdin=null;
     var items=null;
     var tmpfile=null;
@@ -163,6 +274,8 @@ function ocApply (client) {
       return items; //JSON.parse(result.stdout)
     });
   };
+
+  return create;
 }
 
 const resource_transformers = {
@@ -275,6 +388,10 @@ function openShiftClient (settings = {}) {
   client['process'] = ocProcess(client)
   client['apply'] = ocApply(client)
   client['prepare'] = prepare(client)
+  client['getSync'] = ocGetSync(client)
+  client['logsToFileSync'] = ocLogsToFileSync(client)
+  
+  
   //client['startBuild'] = ocStartBuild(client)
   //client['startBuilds'] = startBuilds(client)
 

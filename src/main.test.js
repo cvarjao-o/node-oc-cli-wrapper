@@ -57,10 +57,11 @@ const buildConfigs=[{
 var log4js = require('log4js');
 log4js.configure({
   appenders: {
-    console: { type: 'console' }
+    console: { type: 'console' },
+    file: { type: 'file', filename: 'output/pipeline.log'},
   },
   categories: {
-    default: { appenders: ['console'], level: 'trace' }
+    default: { appenders: ['file'], level: 'info' }
   }
 });
 
@@ -126,6 +127,13 @@ describe('oc', function() {
       }).then(result => {
         return oc.startBuilds(result.items)
       }).then(result  => {
+        if (!fs.existsSync('./output')){
+          fs.mkdirSync('./output')
+        }
+        result.forEach(item => {
+          oc.logsToFileSync({resource:`${item.build.kind}/${item.build.metadata.name}`, timestamps:'true'}, `./output/${item.build.metadata.name}.build.log.txt`)
+        });
+        
         console.dir(result)
         expect(result.length).to.equal(2);
       })

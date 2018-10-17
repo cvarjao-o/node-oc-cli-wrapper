@@ -64,3 +64,4 @@ src/mocks/
 docs/
 dist/
 .DS_Store
+output/
