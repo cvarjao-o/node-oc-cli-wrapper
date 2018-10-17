@@ -408,13 +408,13 @@ function saveBuildArtifactsToDir (client) {
       ['buildConfig', 'build', 'imageStreamTag', 'imageStreamImage'].forEach( prop =>{
         var res=item[prop]
         if (res){
-          names.push(`${oc.util.fullName(res)}`)
+          names.push(`${client.util.fullName(res)}`)
         }
       })
     })
-    oc.getToFileSync({'resources':names}, `${path.join(outputDir, 'build.out.json')}`)
+    client.getToFileSync({'resources':names}, `${path.join(outputDir, 'build.out.json')}`)
     result.forEach(item => {
-      oc.logsToFileSync({resource:`${item.build.kind}/${item.build.metadata.name}`, timestamps:'true'}, `${path.join(outputDir, 'build.'+item.build.metadata.name + '.log.txt')}`)
+      client.logsToFileSync({resource:`${item.build.kind}/${item.build.metadata.name}`, timestamps:'true'}, `${path.join(outputDir, 'build.'+item.build.metadata.name + '.log.txt')}`)
     });
   }
 }
