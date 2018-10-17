@@ -265,9 +265,12 @@ function openShiftClient (settings = {}) {
   
   check_prerequisites()
 
+  if (!settings.cwd){
+    settings.cwd = spawnSync('git', ['rev-parse', '--show-toplevel'], {encoding:'utf-8'}).stdout.trim()
+    logger.trace('Setting cwd', settings.cwd)
+  }
   client['util'] = util
-
-  client['settings']=settings || {}
+  client['settings']=settings
   client['_raw'] = _oc(client)
   client['process'] = ocProcess(client)
   client['apply'] = ocApply(client)
