@@ -71,8 +71,13 @@ function save(object){
   logger.info(`Writing output to ./src/mocks/${hash}.json`)
   if (!fs.existsSync('./state')){
     fs.mkdirSync('./state')
-  }  
-  fs.writeFileSync(`./state/${hash}.json`, JSON.stringify(object))
+  }
+  var filepath = `./state/${hash}.json`;
+  if (fs.existsSync(filepath)){
+    fs.unlinkSync(filepath)
+  }
+  fs.writeFileSync(filepath, JSON.stringify(object))
+  return hash
 }
 
 function restore(hash){
@@ -80,40 +85,51 @@ function restore(hash){
   return JSON.parse(content);
 }
 
-describe('Array', function() {
-  describe('#indexOf()', function() {
+describe('oc', function() {
+  describe('client', function() {
     const oc=cli({'options':{'namespace':'csnr-devops-lab-tools'}, 'cwd':'/Users/cvarjao/Documents/GitHub/cvarjao-o/hello-world'});
 
-    before(function() {
+    //before(function() { })
+    //after(function() { })
+    const cache = new Map()
 
-    })
-    after(function() {
-
-    })
-    it.skip('process/prepare/apply', function() {
+    it('process/prepare', function() {
       this.timeout(20000);
       return oc.process(buildConfigs)
       .then((result) =>{
         return oc.prepare(result)}
       )
       .then((result)=>{
-        save(result)
-        return oc.apply({'filename':result, 'dry-run':'true'});
+        cache.set('prepared-state', save(result))
+        return result;
       })
       .then((result)=>{
+        expect(result.items.length).to.equal(5);
+      })
+    });
+
+    it('apply', function() {
+      this.timeout(200000);
+      return new Promise(function(resolve, reject) {
+        resolve(restore(cache.get('prepared-state')))
+      }).then(result => {
+        return oc.apply({'filename':result});
+      }).then(result  => {
         expect(result.length).to.equal(5);
       })
     });
 
     it('startBuilds', function() {
+      this.timeout(200000);
       return new Promise(function(resolve, reject) {
-        resolve(restore('da2af20802a197321ba64a71e97915327d7826b1'))
+        resolve(restore(cache.get('prepared-state')))
       }).then(result => {
         return oc.startBuilds(result.items)
       }).then(result  => {
         console.dir(result)
         expect(result.length).to.equal(2);
       })
-    })
+    });
+
   });
 });

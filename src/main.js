@@ -1,28 +1,22 @@
 'use strict';
-const log4js = require('@log4js-node/log4js-api');
-const logger = log4js.getLogger('node-oc-cli-wrapper');
+/**
+ * A module that offers a thin wrapper over `oc` command
+ * @module oc-helper
+ */
+
+const log4js = require('log4js');
+const logger = log4js.getLogger('oc-helper');
 const {spawn, spawnSync} = require('child_process');
 const path = require('path');
 const crypto = require('crypto')
 const fs = require('fs');
+const plugins = [require('./build.js')]
 
-function asArray(args){
-  if (args instanceof Array) return args;
-  const result=[]
-  for (var prop in args) {
-    // skip  loop if the property is from prototype
-    if(!args.hasOwnProperty(prop)) continue;
-    var value=args[prop]
-    if (value instanceof Array){
-      value.forEach((item)=>{
-        result.push(`--${prop}=${item}`)
-      })
-    }else{
-      result.push(`--${prop}=${value}`)
-    }
-  }
-  return result
-}
+const util = require('./util.js')
+const fullName = util.fullName
+const shortName = util.shortName
+const CONSTANTS = util.CONSTANTS
+const asArray = util.asArray;
 
 //https://stackoverflow.com/questions/9781218/how-to-change-node-jss-console-font-color
 //function warn(args){
@@ -72,9 +66,10 @@ function _oc (client) {
   return function create (args = [], stdin = null) {
     return new Promise(function(resolve, reject) {
       const _args = asArray(client.settings.options).concat(asArray(args))
-      logger.trace(`oc ${_args.join(' ')}`)
       const _options = {cwd:client.settings.cwd};
-      logger.trace(`cwd: ${_options.cwd}`)
+      logger.trace(`oc ${_args.join(' ')}    cwd: ${_options.cwd}`)
+      
+      //logger.trace(`cwd: ${_options.cwd}`)
 
       const process = spawn('oc', _args, _options);
       let stdout=''
@@ -132,7 +127,7 @@ function ocApply (client) {
         //logger.trace('!args["filename"] instanceof String')
         items=args['filename']
         var json=JSON.stringify(items);
-        var jsonHash=gitHashString(json);
+        var jsonHash=util.hashString(json);
         tmpfile=`/tmp/${jsonHash}.json`;
 
         fs.writeFileSync(tmpfile, json)
@@ -152,12 +147,14 @@ function ocApply (client) {
       var items=result.stdout.split(/\n}\n{\n/);
       
       items.forEach((value, index)=>{
-        if (index == 0 ) {
-          value += '}'
-        }else if (index == items.length - 1 ) {
-          value = '{' + value
-        }else{
-          value = '{' + value + '}'
+        if (items.length > 1){
+          if (index == 0 ) {
+            value += '}'
+          }else if (index == items.length - 1 ) {
+            value = '{' + value
+          }else{
+            value = '{' + value + '}'
+          }
         }
         //logger.trace(`[${index}]=${value}`)
         items[index]=JSON.parse(value)
@@ -166,32 +163,6 @@ function ocApply (client) {
       return items; //JSON.parse(result.stdout)
     });
   };
-}
-const CONSTANTS = Object.freeze({
-  KINDS: {
-    LIST: 'List',
-    BUILD_CONFIG: 'BuildConfig',
-    IMAGE_STREAM: 'ImageStream',
-    IMAGE_STREAM_TAG: 'ImageStreamTag'
-  },
-  ANNOTATIONS: {
-    TEMPLATE_HASH: 'config-hash',
-    SOURCE_HASH: 'source-hash'
-  }
-});
-
-function gitHashString(itemAsString){
-  var shasum = crypto.createHash('sha1');
-  //var itemAsString = JSON.stringify(resource)
-  shasum.update(`blob ${itemAsString.length + 1}\0${itemAsString}\n`);
-  return shasum.digest('hex');
-}
-
-function gitHashObject(resource){
-  //var shasum = crypto.createHash('sha1');
-  var itemAsString = JSON.stringify(resource)
-  //shasum.update(`blob ${itemAsString.length + 1}\0${itemAsString}\n`);
-  return gitHashString(itemAsString)
 }
 
 const resource_transformers = {
@@ -204,7 +175,7 @@ const resource_transformers = {
     resource.metadata.namespace = resource.metadata.namespace || container.namespace || client.settings.options.namespace
   },
   ADD_CHECKSUM_LABEL: (resource)=>{
-    resource.metadata.labels[CONSTANTS.ANNOTATIONS.TEMPLATE_HASH] = gitHashObject(resource)
+    resource.metadata.labels[CONSTANTS.LABELS.TEMPLATE_HASH] = util.hashObject(resource)
   },
   REMOVE_BUILD_CONFIG_TRIGGERS: (resource)=>{
     if (resource.kind === CONSTANTS.KINDS.BUILD_CONFIG) {
@@ -260,218 +231,13 @@ const resource_transformers = {
           return 0;
         });
         //console.dir(hashes)
-        sourceHash = gitHashObject(hashes)
+        sourceHash = util.hashObject(hashes)
       }
 
       //logger.trace(`sourceHash:${sourceHash} (${contextDir})`)
-      resource.metadata.labels[CONSTANTS.ANNOTATIONS.SOURCE_HASH] = sourceHash;
+      resource.metadata.labels[CONSTANTS.LABELS.SOURCE_HASH] = sourceHash;
     }
   }
-}
-
-function shortName (resource) {
-  return resource.metadata.name
-}
-
-function fullName (resource) {
-  return resource.kind + '/' + resource.metadata.name
-}
-
-function startBuild (client) {
-  return (resource) => {
-    return new Promise((resolve, reject) => {
-      resolve({'kind':'Build', 'metadata':{'name':`${resource.metadata.name}-00`}})
-    })
-  }
-}
-
-function _startBuild (client, buildConfig) {
-  return (builds) => {
-    return new Promise(function(resolve, reject){
-      client.startBuild(buildConfig).then(build =>{
-        builds.push(build)
-        resolve(builds)
-      })
-    });
-  }
-}
-
-function _buildNext (client, currentBuildConfig, buidlConfigs, indexOfPromissesByBuildConfig, indexOfBuildConfigDependencies, indexOfBuildConfigByOutputImageStream) {
-
-
-  return new Promise(function(resolve, reject){
-    var buildConfigFullName = fullName(currentBuildConfig);
-
-  })
-
-  const maxLoopCount = buildConfigs.length * 2
-  var currentBuildConfig = null
-  var currentLoopCount = 0
-
-  while((currentBuildConfig=buildConfigs.shift()) !== undefined){
-    var buildConfigFullName = fullName(currentBuildConfig)
-    var dependencies= indexOfBuildConfigDependencies.get(buildConfigFullName)
-    var resolved=true
-
-    logger.trace(`Trying to queue ${buildConfigFullName}`)
-
-    for (var i = 0; i < dependencies.length; i++) {
-      var imageStreamName=dependencies[i]
-      var parentBuildConfig = indexOfBuildConfigByOutputImageStream.get(imageStreamName)
-      if (parentBuildConfig !== undefined){
-        if (!indexOfPromissesByBuildConfig.has(parentBuildConfig)){
-          logger.trace(`Waiting for ${fullName(parentBuildConfig)}`)
-          resolved = false
-          break;
-        }
-      }
-    }
-    //analize
-
-    //return to list, try again later
-    if (!resolved){
-      buildConfigs.push(currentBuildConfig)
-    }else{
-      var _callStartBuild = function(builds) {
-        var promise = new Promise(function(resolve, reject){
-          logger.trace(`Starting ${buildConfigFullName}`)
-           resolve(builds)
-        });
-
-        return promise;
-     };
-
-     logger.trace(`Queuing ${buildConfigFullName}`)
-     p=p.then(_startBuild(client, currentBuildConfig))
-
-      indexOfPromissesByBuildConfig.set(currentBuildConfig, p)
-    }
-
-    currentLoopCount++
-    if (currentLoopCount > maxLoopCount){
-      throw `It seems like there is a circular reference among BuildConfigs and their ImageStreams: ${buildConfigs}`
-    }
-  } // end while
-}
-function startBuilds (client) {
-  return (resources) => {
-    logger.trace('>startBuilds')
-    var promises = [];
-    //var keys = {}
-    var indexOfAllByName = new Map()
-    var indexOfBuildConfigByOutputImageStream = new Map()
-    var indexOfBuildConfigByInputImageStream = new Map()
-    var indexOfBuildConfigDependencies = new Map()
-    var indexOfBuildConfigBuild = new Map()
-    var indexOfPromissesByBuildConfig = new Map()
-
-    var buildConfigs = []
-    resources.forEach((res)=>{
-      var resourceFullName=fullName(res)
-      logger.trace(`Indexing ${resourceFullName} - ${res.metadata.namespace}`)
-      //keys[resourceFullName] = Symbol(resourceFullName)
-      indexOfAllByName.set(resourceFullName, res)
-      if (res.kind == CONSTANTS.KINDS.BUILD_CONFIG){
-        buildConfigs.push(res)
-      }
-    })
-
-    buildConfigs.forEach((bc)=>{
-      var buildConfigFullName = fullName(bc)
-      logger.trace(`Analyzing ${buildConfigFullName} - ${bc.metadata.namespace}`)
-      var outputTo = bc.spec.output.to
-      if (outputTo){
-        if (outputTo.kind === CONSTANTS.KINDS.IMAGE_STREAM_TAG){
-          var name=outputTo.name.split(':')
-          var imageStreamFullName = `${CONSTANTS.KINDS.IMAGE_STREAM}/${name[0]}`
-          indexOfBuildConfigByOutputImageStream.set(imageStreamFullName, bc)
-        }else{
-          die(`Expected '${CONSTANTS.KINDS.IMAGE_STREAM_TAG}' but found '${outputTo.kind}' in ${buildConfigFullName}.spec.output.to`)
-        }
-        
-      }
-      var buildStrategy = bc.spec.strategy.sourceStrategy || bc.spec.strategy.dockerStrategy
-
-      var dependencies = []
-      if (buildStrategy.from){
-        logger.trace(`${buildConfigFullName} - `, buildStrategy.from)
-        if (buildStrategy.from.kind === CONSTANTS.KINDS.IMAGE_STREAM_TAG){
-          var name=buildStrategy.from.name.split(':')
-          var imageStreamFullName = `${CONSTANTS.KINDS.IMAGE_STREAM}/${name[0]}`
-          indexOfBuildConfigByInputImageStream.set(imageStreamFullName, bc)
-          dependencies.push(imageStreamFullName)
-        }else{
-          die(`Expected '${CONSTANTS.KINDS.IMAGE_STREAM_TAG}' but found '${buildStrategy.from.kind}' in ${buildConfigFullName}.strategy.*.from`)
-        }
-      }
-
-      if ((bc.spec.source || {}).images){
-        var sourceImages= bc.spec.source.images
-        sourceImages.forEach( sourceImage  => {
-          if (sourceImage.kind === CONSTANTS.KINDS.IMAGE_STREAM_TAG){
-            var name=sourceImage.name.split(':')
-            var imageStreamFullName = `${CONSTANTS.KINDS.IMAGE_STREAM}/${name[0]}`
-            dependencies.push(imageStreamFullName)
-          }
-        })
-      }
-      indexOfBuildConfigDependencies.set(buildConfigFullName, dependencies)
-    })
-
-    const maxLoopCount = buildConfigs.length * 2
-    var p = Promise.resolve([])
-    var currentBuildConfig = null
-    var currentLoopCount = 0
-
-    while((currentBuildConfig=buildConfigs.shift()) !== undefined){
-      var buildConfigFullName = fullName(currentBuildConfig)
-      var dependencies= indexOfBuildConfigDependencies.get(buildConfigFullName)
-      var resolved=true
-
-      logger.trace(`Trying to queue ${buildConfigFullName}`)
-
-      for (var i = 0; i < dependencies.length; i++) {
-        var imageStreamName=dependencies[i]
-        var parentBuildConfig = indexOfBuildConfigByOutputImageStream.get(imageStreamName)
-        if (parentBuildConfig !== undefined){
-          if (!indexOfPromissesByBuildConfig.has(parentBuildConfig)){
-            logger.trace(`Waiting for ${fullName(parentBuildConfig)}`)
-            resolved = false
-            break;
-          }
-        }
-      }
-      //analize
-
-      //return to list, try again later
-      if (!resolved){
-        buildConfigs.push(currentBuildConfig)
-      }else{
-        var _callStartBuild = function(builds) {
-          var promise = new Promise(function(resolve, reject){
-            logger.trace(`Starting ${buildConfigFullName}`)
-             resolve(builds)
-          });
-
-          return promise;
-       };
-
-       logger.trace(`Queuing ${buildConfigFullName}`)
-       p=p.then(_startBuild(client, currentBuildConfig))
-
-        indexOfPromissesByBuildConfig.set(currentBuildConfig, p)
-      }
-
-      currentLoopCount++
-      if (currentLoopCount > maxLoopCount){
-        throw `It seems like there is a circular reference among BuildConfigs and their ImageStreams: ${buildConfigs}`
-      }
-    } // end while
-
-    //Index BuildConfigs and ImageStreams
-    //Ordering of BuildConfigs
-    return p;
-  };
 }
 
 function prepare (client) {
@@ -499,13 +265,24 @@ function openShiftClient (settings = {}) {
   
   check_prerequisites()
 
-  client['settings']=settings || {}  
+  client['util'] = util
+
+  client['settings']=settings || {}
   client['_raw'] = _oc(client)
   client['process'] = ocProcess(client)
   client['apply'] = ocApply(client)
   client['prepare'] = prepare(client)
-  client['startBuild'] = startBuild(client)
-  client['startBuilds'] = startBuilds(client)
+  //client['startBuild'] = ocStartBuild(client)
+  //client['startBuilds'] = startBuilds(client)
+
+  plugins.forEach (plugin => {
+    for (var prop in plugin) {
+      // skip  loop if the property is from prototype
+      if(!plugin.hasOwnProperty(prop)) continue;
+      var value=plugin[prop]
+      client[prop] = value(client)
+    }
+  })
   return client;
 }
 

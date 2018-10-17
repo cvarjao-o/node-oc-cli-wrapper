@@ -7,7 +7,9 @@
     "node": ">=8.12.0"
   },
   "scripts": {
-    "test": "mocha src/**/**.test.js"
+    "test": "mocha src/**/**.test.js",
+    "docs": "jsdoc src -r -d docs",
+    "build": "./node_modules/.bin/webpack"
   },
   "repository": {
     "type": "git",
@@ -20,9 +22,12 @@
   },
   "homepage": "https://github.com/cvarjao-o/node-oc-cli-wrapper#readme",
   "devDependencies": {
+    "expect.js": "^0.3.1",
+    "jsdoc": "^3.5.5",
     "mocha": "^5.2.0",
     "mock-spawn": "^0.2.6",
-    "expect.js": "^0.3.1"
+    "webpack": "^4.20.2",
+    "webpack-cli": "^3.1.2"
   },
   "dependencies": {
     "log4js": "^3.0.6"
