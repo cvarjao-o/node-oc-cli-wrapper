@@ -189,7 +189,7 @@ function ocLogsSync (client) {
 
 function ocGetToFileSync (client) {
   return function create (args = {}, filepath) {
-    const content=ocGetSync(args)
+    const content=client.getSync(args)
     fs.writeFileSync(filepath, content)
     return filepath
   }
