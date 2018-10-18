@@ -1,4 +1,8 @@
 'use strict';
+/**
+ * A module that offers a thin wrapper over `oc` command
+ * @module oc-helper
+ */
 const log4js = require('log4js');
 const logger = log4js.getLogger('oc-helper/build');
 
@@ -366,30 +370,31 @@ function startBuilds (client) {
 
 /**
  * Wraper for `oc start-build`
+ * @private
  */
 function startBuild (client) {
-  return function create (args = []) {
-    args=asArray(args)
-    for(var i=0; i< args.length; i++){
-      if (args[i].startsWith('--from-build-config=')){
-        args[i]=args[i].substr('--from-build-config='.length)
-      }
+  /** Helper for `oc start-build`
+   * @member startBuild
+   * @function
+   * @param args {(Object|Object[])} one ore more template processing definition. The properties will become arguments for `oc process`
+   * @returns {Promise} Array of resources created or updated
+   * @see https://www.mankier.com/1/oc-start-build
+   */
+  return function create (args = {}) {
+    const _args=Object.assign({}, args)
+    if (_args['from-build-config']){
+      _args['resource'] = _args['from-build-config']
+      delete _args['from-build-config']
     }
-    const _args=['start-build', '--output=name'].concat(args)
+    Object.assign(_args, {'output':'name'})
     logger.info('Starting new build ',  ['oc'].concat(_args).join(' '))
-    return client._raw(_args)
+    return client._ocSpawnAndReturnStdout('start-build', _args)
     .then((result)=>{
       //json output is in stream format
       var items=result.stdout.trim().split(/\n/);
-      /*
-      items.forEach((value, index)=>{
-        items[index]=JSON.parse(value)
-      });
-      */
-      //require('fs').writeFile('_oc_apply_stdout.json', result.stdout, 'utf8')
       return items[0]; //JSON.parse(result.stdout)
     }).then( (result) => {
-      return client._raw(['get', `${result}`, '--output=json', '--export=true'])
+      return client._ocSpawnAndReturnStdout('get', {resource:result, output:'json', export:'true'})
       .then(result => {
         return JSON.parse(result.stdout.trim())
       })
@@ -418,6 +423,7 @@ function saveBuildArtifactsToDir (client) {
     });
   }
 }
+
 module.exports = exports = {
   startBuild: startBuild,
   startBuilds: startBuilds,

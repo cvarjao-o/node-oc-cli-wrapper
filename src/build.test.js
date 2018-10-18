@@ -105,6 +105,7 @@ describe('oc', function() {
         return result;
       })
       .then((result)=>{
+        expect(result.kind).to.equal('List');
         expect(result.items.length).to.equal(5);
       })
     });
@@ -114,7 +115,7 @@ describe('oc', function() {
       return new Promise(function(resolve, reject) {
         resolve(restore(cache.get('prepared-state')))
       }).then(result => {
-        return oc.apply({'filename':result});
+        return oc.apply(result);
       }).then(result  => {
         expect(result.length).to.equal(5);
       })
@@ -125,17 +126,31 @@ describe('oc', function() {
       return new Promise(function(resolve, reject) {
         resolve(restore(cache.get('prepared-state')))
       }).then(result => {
+        expect(result).to.have.property('items')
+        expect(result).to.have.property('kind')
+        expect(result.kind).to.equal('List');
         return oc.startBuilds(result.items)
       }).then(result  => {
-        if (!fs.existsSync('./output')){
-          fs.mkdirSync('./output')
-        }
-        result.forEach(item => {
-          oc.logsToFileSync({resource:`${item.build.kind}/${item.build.metadata.name}`, timestamps:'true'}, `./output/${item.build.metadata.name}.build.log.txt`)
-        });
+        oc.saveBuildArtifactsToDir(result, './output')
         
-        console.dir(result)
+        //console.dir(result)
+        expect(result).to.be.an('array')
         expect(result.length).to.equal(2);
+
+        result.forEach(function(item){
+          expect(item).to.have.property('buildConfig')
+          expect(item).to.have.property('build')
+          expect(item).to.have.property('imageStreamTag')
+          expect(item).to.have.property('imageStreamImage')
+          /*
+          [item.buildConfig, item.build, item.imageStreamTag, item.imageStreamImage].forEach((resource) => {
+            expect(resource).to.have.property('kind')
+            expect(resource).to.have.property('metadata')
+            expect(resource.metadata).to.have.property('name')
+          });
+          */
+        })
+
       })
     });
 

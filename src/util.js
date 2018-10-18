@@ -56,6 +56,21 @@ function fullName (resource) {
   return resource.kind + '/' + resource.metadata.name
 }
 
+function appendArg(prefix, item, result){
+  if (item instanceof Array){
+    item.forEach((subitem)=>{
+      appendArg(prefix, subitem, result)
+    })
+  }else if (!((item instanceof String) || (typeof item === "string")) && item instanceof Object){
+    for (var prop in item) {
+      if(!item.hasOwnProperty(prop)) continue;
+      appendArg(`${prefix}=${prop}`, item[prop], result)
+    }
+  }else{
+    result.push(`${prefix}=${item}`)
+  }
+}
+
 function asArray(args){
   if (args instanceof Array) return args;
   const result=[]
@@ -63,16 +78,31 @@ function asArray(args){
     // skip  loop if the property is from prototype
     if(!args.hasOwnProperty(prop)) continue;
     var value=args[prop]
-    if (value instanceof Array){
-      value.forEach((item)=>{
-        result.push(`--${prop}=${item}`)
-      })
-    }else{
-      result.push(`--${prop}=${value}`)
-    }
+    appendArg(`--${prop}`, value, result)
   }
   return result
 }
+
+/**
+ * Move all global options (oc options) from source to target. Both objects are modified in-place.
+ * @param {Object} target
+ * @param {Object} source 
+ * @private
+ * @returns {Object} The modified target object
+ */
+function moveGlobalOptions (target, source) {
+  const whitelist=['as', 'as-group', 'cache-dir', 'context', 'config', 'loglevel', 'namespace', 'v']
+  for (var prop in source) {
+    // skip  loop if the property is from prototype
+    if(!source.hasOwnProperty(prop)) continue;
+    if (whitelist.indexOf(prop) >=0){
+      target[prop]=source[prop]
+      delete source[prop]
+    }
+  }
+  return target
+}
+
 
 module.exports = exports = {
   CONSTANTS: CONSTANTS,
@@ -80,5 +110,6 @@ module.exports = exports = {
   hashString: gitHashString,
   shortName: shortName,
   fullName: fullName,
-  asArray: asArray
+  asArray: asArray,
+  moveGlobalOptions: moveGlobalOptions
 }
