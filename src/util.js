@@ -5,6 +5,8 @@
 const crypto = require('crypto')
 //const fs = require('fs');
 
+const log4js = require('log4js');
+
 const CONSTANTS = Object.freeze({
   KINDS: {
     LIST: 'List',
@@ -103,6 +105,12 @@ function moveGlobalOptions (target, source) {
   return target
 }
 
+function getLogger(name){
+  return log4js.getLogger(name)
+}
+function configureLogging(args){
+  log4js.configure(args)
+}
 
 module.exports = exports = {
   CONSTANTS: CONSTANTS,
@@ -111,5 +119,7 @@ module.exports = exports = {
   shortName: shortName,
   fullName: fullName,
   asArray: asArray,
-  moveGlobalOptions: moveGlobalOptions
+  moveGlobalOptions: moveGlobalOptions,
+  getLogger:getLogger,
+  configureLogging: configureLogging
 }

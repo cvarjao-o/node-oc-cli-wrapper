@@ -86,12 +86,20 @@ function _ocSpawn (client) {
    * @return {Promise<ChildProcess>}
    */
   return function create (action, args = {}) {
+    const cmdArgs = toOcCommandArguments(client, action, args)
+    const startTime = process.hrtime();
     return new Promise(function(resolve, reject) {
-      const cmdArgs = toOcCommandArguments(client, action, args)
-      logger.trace('ocSpawn', ['oc'].concat(cmdArgs).join(' '))
+      logger.info('>spawn',  ['oc'].concat(cmdArgs).join(' '))
+      //logger.trace('ocSpawn', ['oc'].concat(cmdArgs).join(' '))
       const _options = {cwd:client.settings.cwd};
       resolve(spawn('oc', cmdArgs, _options));
-    });
+    }).then(proc =>{
+      proc.on('exit', (code) => {
+        const duration = process.hrtime(startTime);
+        logger.info(`<spawn [${duration[0]}s]`,  ['oc'].concat(cmdArgs).join(' '))
+      })
+      return proc;
+    })
   };
 }
 
@@ -123,6 +131,8 @@ function _ocSpawnAndReturnStdout (client) {
   };
 }
 
+const NS_PER_SEC = 1e9;
+
 function _ocSpawnSync (client) {
   /**
    * @member _ocSpawnSync
@@ -134,9 +144,14 @@ function _ocSpawnSync (client) {
   return function create (action, args = {}) {
     //return new Promise(function(resolve, reject) {
       const cmdArgs = toOcCommandArguments(client, action, args)
-      logger.trace('ocSpawnSync', ['oc'].concat(cmdArgs).join(' '))
+      //logger.trace('ocSpawnSync', ['oc'].concat(cmdArgs).join(' '))
+      const startTime = process.hrtime();
+      logger.info('>spawnSync',  ['oc'].concat(cmdArgs).join(' '))
       const _options = {cwd:client.settings.cwd, encoding:'utf-8'};
-      return spawnSync('oc', cmdArgs, _options);
+      const ret = spawnSync('oc', cmdArgs, _options);
+      const duration = process.hrtime(startTime);
+      logger.info(`<spawnSync [${duration[0]}s]`,  ['oc'].concat(cmdArgs).join(' '))
+      return ret;
     //});
   };
 }

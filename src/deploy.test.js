@@ -1,31 +1,32 @@
 const assert = require('assert');
 const fs = require('fs');
 const expect = require('expect.js');
-const util=require('./util')
-util.configureLogging({
+
+var log4js = require('log4js');
+log4js.configure({
   appenders: {
     console: { type: 'console' },
     file: { type: 'file', filename: 'output/pipeline.log'},
   },
   categories: {
-    default: { appenders: ['console', 'file'], level: 'all' }
+    default: { appenders: ['file'], level: 'debug' }
   }
 });
 
-
+const util=require('./util')
 const cli=require('./main')
-var logger = util.getLogger();
 
-const buildConfigs=[{
-  'filename':'.pipeline/_python36.bc.json',
+var logger = log4js.getLogger();
+
+const buildNamespace = 'csnr-devops-lab-tools'
+const buildVersion = 'build-1.0.0'
+const deploymentConfigs=[{
+  'filename':'.pipeline/_python36.dc.json',
   'param':{
     'NAME':'hello',
-    'SUFFIX':'-prod',
-    'VERSION':'build-1.0.0',
-    'SOURCE_BASE_CONTEXT_DIR':'app-base',
-    'SOURCE_CONTEXT_DIR':'app',
-    'SOURCE_REPOSITORY_URL':'https://github.com/cvarjao-o/hello-world.git',
-    'SOURCE_REPOSITORY_REF':'master'
+    'SUFFIX':'-dev',
+    'VERSION':'1.0.0',
+    'HOST':''
   }
 }]
 
@@ -48,10 +49,9 @@ function restore(hash){
   return JSON.parse(content);
 }
 
-logger.trace("Starting")
 //describe('oc', function() {
-  describe('build', function() {
-    const oc=cli({'options':{'namespace':'csnr-devops-lab-tools'}, 'cwd':'/Users/cvarjao/Documents/GitHub/cvarjao-o/hello-world'});
+  describe('deployment', function() {
+    const oc=cli({'options':{'namespace':'csnr-devops-lab-deploy'}, 'cwd':'/Users/cvarjao/Documents/GitHub/cvarjao-o/hello-world'});
 
     //before(function() { })
     //after(function() { })
@@ -59,7 +59,7 @@ logger.trace("Starting")
 
     it('process/prepare', function() {
       this.timeout(20000);
-      return oc.process(buildConfigs)
+      return oc.process(deploymentConfigs)
       .then((result) =>{
         return oc.prepare(result)}
       )
@@ -69,10 +69,11 @@ logger.trace("Starting")
       })
       .then((result)=>{
         expect(result.kind).to.equal('List');
-        expect(result.items.length).to.equal(5);
+        expect(result.items.length).to.equal(4);
       })
     });
 
+    /*
     it('apply', function() {
       this.timeout(200000);
       return new Promise(function(resolve, reject) {
@@ -83,7 +84,9 @@ logger.trace("Starting")
         expect(result.length).to.equal(5);
       })
     });
+    */
 
+    /*
     it('startBuilds', function() {
       this.timeout(200000);
       return new Promise(function(resolve, reject) {
@@ -108,5 +111,6 @@ logger.trace("Starting")
         })
       })
     });
+    */
   });
 //});

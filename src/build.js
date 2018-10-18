@@ -3,15 +3,17 @@
  * A module that offers a thin wrapper over `oc` command
  * @module oc-helper
  */
-const log4js = require('log4js');
-const logger = log4js.getLogger('oc-helper/build');
+//const log4js = require('log4js');
+const fs = require('fs');
+const util = require('./util.js');
+const logger = util.getLogger('oc-helper.build');
 
 const {spawn, spawnSync} = require('child_process');
 const path = require('path');
 //const crypto = require('crypto')
-const fs = require('fs');
 
-const util = require('./util.js');
+
+
 const fullName = util.fullName;
 const shortName = util.shortName;
 const CONSTANTS = util.CONSTANTS;
@@ -51,7 +53,7 @@ function _startBuild (client, buildConfig) {
   //return (builds) => {
     return new Promise(function(resolve, reject){
       //ToDo:CHeck if it needs new build
-      const LOG = log4js.getLogger(`oc-helper/build/${fullName(buildConfig)}`)
+      const LOG = util.getLogger(`oc-helper.build.${fullName(buildConfig)}`)
       const tmpfile=`/tmp/${util.hashObject(buildConfig)}.tar`
       let args={}
       const hashData = {source:buildConfig.metadata.labels[CONSTANTS.LABELS.SOURCE_HASH], images:[], buildConfig:buildConfig.metadata.labels[CONSTANTS.LABELS.TEMPLATE_HASH]}
@@ -70,7 +72,8 @@ function _startBuild (client, buildConfig) {
       }
       getBuildConfigInputImages(buildConfig).forEach(sourceImage => {
         if (sourceImage.kind === CONSTANTS.KINDS.IMAGE_STREAM_TAG){
-          var ocGet = spawnSync('oc', asArray(client.settings.options).concat(['get', `${sourceImage.kind}/${sourceImage.name}`, '--output=jsonpath={.image.metadata.name}']), {'cwd':client.settings.cwd, encoding:'utf-8'});
+
+          var ocGet = client._ocSpawnSync('get', {'resource':`${sourceImage.kind}/${sourceImage.name}`, 'output':'jsonpath={.image.metadata.name}'});
           var imageName = ocGet.stdout.trim()
           var imageStreamImageName = sourceImage.name.split(':')[0] + '@' + imageName
           LOG.info(`Rewriting reference from '${sourceImage.kind}/${sourceImage.name}' to '${CONSTANTS.KINDS.IMAGE_STREAM_IMAGE}/${imageStreamImageName}'`)
@@ -100,24 +103,28 @@ function _startBuild (client, buildConfig) {
 
       images.forEach(tag => {
         if (!foundImageStreamImage){
-          tag.items.forEach(image => {
-            if (!foundImageStreamImage){
-              var ocImageStreamImage = JSON.parse(spawnSync('oc', asArray(client.settings.options).concat(['get', `${CONSTANTS.KINDS.IMAGE_STREAM_IMAGE}/${outputTo.name.split(':')[0]}@${image.image}`, '--output=json']), {'cwd':client.settings.cwd, encoding:'utf-8'}).stdout.trim());
-              var sourceBuild = {kind:CONSTANTS.KINDS.BUILD, metadata:{}}
-              ocImageStreamImage.image.dockerImageMetadata.Config.Env.forEach((envLine => {
-                //if (!foundImageStreamImage){
-                  if (envLine === `${CONSTANTS.ENV.BUILD_HASH}=${buildHash}`){
-                    foundImageStreamImage = ocImageStreamImage
-                    foundBuild=sourceBuild
-                  }else if (envLine.startsWith('OPENSHIFT_BUILD_NAME=')){
-                    sourceBuild.metadata.name=envLine.split('=')[1]
-                  }else if (envLine.startsWith('OPENSHIFT_BUILD_NAMESPACE=')){
-                    sourceBuild.metadata.namespace=envLine.split('=')[1]
-                  }
-                //}
-              }))
-
-            }
+          var resources= tag.items.map((image)=>{
+            return `${CONSTANTS.KINDS.IMAGE_STREAM_IMAGE}/${outputTo.name.split(':')[0]}@${image.image}`
+          })
+          var ocGet = client._ocSpawnSync('get', {'resources':resources, 'output':'json'})
+          var images = JSON.parse(ocGet.stdout.trim());
+          if (images.kind !== util.CONSTANTS.KINDS.LIST){
+            images={items:[images]}
+          }
+          images.items.forEach(ocImageStreamImage =>{
+            var sourceBuild = {kind:CONSTANTS.KINDS.BUILD, metadata:{}}
+            ocImageStreamImage.image.dockerImageMetadata.Config.Env.forEach((envLine => {
+              //if (!foundImageStreamImage){
+                if (envLine === `${CONSTANTS.ENV.BUILD_HASH}=${buildHash}`){
+                  foundImageStreamImage = ocImageStreamImage
+                  foundBuild=sourceBuild
+                }else if (envLine.startsWith('OPENSHIFT_BUILD_NAME=')){
+                  sourceBuild.metadata.name=envLine.split('=')[1]
+                }else if (envLine.startsWith('OPENSHIFT_BUILD_NAMESPACE=')){
+                  sourceBuild.metadata.namespace=envLine.split('=')[1]
+                }
+              //}
+            }))
           })
         }
       })
@@ -312,7 +319,7 @@ function getBuildConfigInputImages (bc) {
 
 function startBuilds (client) {
   return (resources) => {
-    logger.trace('>startBuilds')
+    logger.info('>startBuilds')
     //var cache = new Map()
 
     var buildConfigs = []
@@ -362,6 +369,7 @@ function startBuilds (client) {
     })
     
     const builds= []
+    logger.info('<startBuilds')
     return pickNextBuilds(client, builds, buildConfigs).then(()=>{
       return builds;
     })
@@ -387,7 +395,6 @@ function startBuild (client) {
       delete _args['from-build-config']
     }
     Object.assign(_args, {'output':'name'})
-    logger.info('Starting new build ',  ['oc'].concat(_args).join(' '))
     return client._ocSpawnAndReturnStdout('start-build', _args)
     .then((result)=>{
       //json output is in stream format
