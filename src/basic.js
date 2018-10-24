@@ -18,10 +18,13 @@ module.exports = exports = {
         })
 
         var exitingItems = await client.get(items, {'ignore-not-found':'true'})
-        exitingItems.items.forEach (item  => {
-          var newItem = index.get(`${item.kind}/${item.metadata.name}`)
-          newItem.metadata.resourceVersion = item.metadata.resourceVersion
-        })
+        if (exitingItems!=null){
+          if (exitingItems.kind != 'List') exitingItems= {'kind':'List', items:[exitingItems]}
+          exitingItems.items.forEach (item  => {
+            var newItem = index.get(`${item.kind}/${item.metadata.name}`)
+            newItem.metadata.resourceVersion = item.metadata.resourceVersion
+          })
+        }
         return resolve(list);
       });
     };
@@ -257,7 +260,11 @@ module.exports = exports = {
       var _args = Object.assign({}, args) //creates a shallow copy
       return client._ocSpawnAndReturnStdout('get', Object.assign({resources:resources, output:'json'}, _args))
       .then(result => {
-        return JSON.parse(result.stdout.trim())
+        var json = result.stdout.trim()
+        if (json.length == 0){
+          return null
+        }
+        return JSON.parse(json)
       })
     }
   }

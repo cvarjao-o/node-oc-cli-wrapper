@@ -165,7 +165,7 @@ function _startBuild (client, buildConfig) {
         LOG.info(`Reusing '${fullName(output.imageStreamImage)}' created by '${fullName(output.build)}'`)
         resolve(output)
       }else{
-        client.apply(buildConfig).then(() => {
+        client.apply({kind:'List', items:[buildConfig]}).then(() => {
           return client.startBuild(args)
         }).then(build =>{
           //setTimeout(function(){
