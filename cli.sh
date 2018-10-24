@@ -43,11 +43,11 @@ echo "npm: $(npm --version) (from $(which npm))"
 #npm config ls -l
 #unset NPM_CONFIG_LOGLEVEL
 
-#if [ ! -d "node_modules" ]; then
+if [ ! -d "node_modules" ]; then
   #rm -rf node_modules
   #npm list -g --depth 0
   NODE_ENV=PRODUCTION "${NODE_HOME}/bin/npm" "ci"
   #NODE_ENV=PRODUCTION "${NODE_HOME}/bin/npm" "install" --no-audit
-#fi
+fi
 
 exec "${NODE_HOME}/bin/npm" run-script "$@"
