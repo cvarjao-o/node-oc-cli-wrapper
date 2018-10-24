@@ -1,31 +1,23 @@
 const assert = require('assert');
 const fs = require('fs');
 const expect = require('expect.js');
-
-var log4js = require('log4js');
-log4js.configure({
-  appenders: {
-    console: { type: 'console' },
-    file: { type: 'file', filename: 'output/pipeline.log'},
-  },
-  categories: {
-    default: { appenders: ['file'], level: 'debug' }
-  }
-});
-
 const util=require('./util')
+require('./configure-logging.js')()
+
 const cli=require('./main')
 
-var logger = log4js.getLogger();
+var logger = util.getLogger();
 
 const buildNamespace = 'csnr-devops-lab-tools'
 const buildVersion = 'build-1.0.0'
+const deploymentVersion = 'dev-1.0.0'
+
 const deploymentConfigs=[{
-  'filename':'.pipeline/_python36.dc.json',
+  'filename':'openshift/_python36.dc.json',
   'param':{
     'NAME':'hello',
     'SUFFIX':'-dev',
-    'VERSION':'1.0.0',
+    'VERSION':deploymentVersion,
     'HOST':''
   }
 }]
@@ -51,6 +43,7 @@ function restore(hash){
 
 //describe('oc', function() {
   describe('deployment', function() {
+    this.timeout(400000);
     const oc=cli({'options':{'namespace':'csnr-devops-lab-deploy'}, 'cwd':'/Users/cvarjao/Documents/GitHub/cvarjao-o/hello-world'});
 
     //before(function() { })
@@ -58,33 +51,38 @@ function restore(hash){
     const cache = new Map()
 
     it('process/prepare', function() {
-      this.timeout(20000);
       return oc.process(deploymentConfigs)
       .then((result) =>{
         return oc.prepare(result)}
       )
       .then((result)=>{
+        oc.setBasicLabels(result, 'hello', 'dev', 'pr-1')
         cache.set('prepared-state', save(result))
         return result;
       })
       .then((result)=>{
         expect(result.kind).to.equal('List');
-        expect(result.items.length).to.equal(4);
+        expect(result.items.length).to.equal(5);
       })
     });
 
-    /*
     it('apply', function() {
-      this.timeout(200000);
       return new Promise(function(resolve, reject) {
         resolve(restore(cache.get('prepared-state')))
       }).then(result => {
-        return oc.apply(result);
-      }).then(result  => {
-        expect(result.length).to.equal(5);
+        return oc.fetchSecretsAndConfigMaps(result)
+      }).then(result => {
+        expect(result.kind).to.equal('List');
+        expect(result.items.length).to.equal(5);
+        return oc.importImageStreams(result, deploymentVersion, buildNamespace, buildVersion).then(result=>{
+          return oc.applyAndWait(result);
+        })
+      }).then(result => {
+        //console.dir(result)
+        console.log('done!')
       })
     });
-    */
+    
 
     /*
     it('startBuilds', function() {

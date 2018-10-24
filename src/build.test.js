@@ -2,22 +2,14 @@ const assert = require('assert');
 const fs = require('fs');
 const expect = require('expect.js');
 const util=require('./util')
-util.configureLogging({
-  appenders: {
-    console: { type: 'console' },
-    file: { type: 'file', filename: 'output/pipeline.log'},
-  },
-  categories: {
-    default: { appenders: ['console', 'file'], level: 'all' }
-  }
-});
+require('./configure-logging.js')()
 
 
 const cli=require('./main')
 var logger = util.getLogger();
 
 const buildConfigs=[{
-  'filename':'.pipeline/_python36.bc.json',
+  'filename':'openshift/_python36.bc.json',
   'param':{
     'NAME':'hello',
     'SUFFIX':'-prod',
@@ -56,25 +48,26 @@ logger.trace("Starting")
     //before(function() { })
     //after(function() { })
     const cache = new Map()
+    this.timeout(40000);
 
-    it('process/prepare', function() {
-      this.timeout(20000);
+    it('process/prepare', function() {  
       return oc.process(buildConfigs)
       .then((result) =>{
-        return oc.prepare(result)}
-      )
-      .then((result)=>{
-        cache.set('prepared-state', save(result))
-        return result;
+        return oc.prepare(result)
       })
       .then((result)=>{
         expect(result.kind).to.equal('List');
         expect(result.items.length).to.equal(5);
+        return result
+      })
+      .then((result)=>{
+        oc.setBasicLabels(result, 'hello', 'build', 'pr-1')
+        cache.set('prepared-state', save(result))
+        return result;
       })
     });
 
     it('apply', function() {
-      this.timeout(200000);
       return new Promise(function(resolve, reject) {
         resolve(restore(cache.get('prepared-state')))
       }).then(result => {
@@ -85,7 +78,6 @@ logger.trace("Starting")
     });
 
     it('startBuilds', function() {
-      this.timeout(200000);
       return new Promise(function(resolve, reject) {
         resolve(restore(cache.get('prepared-state')))
       }).then(result => {

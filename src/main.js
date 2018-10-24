@@ -1,16 +1,20 @@
 'use strict';
 /**
  * A module that offers a thin wrapper over `oc` command
+ * - All methods return a Promise
+ * - oc actions (get, apply, tag, delete, etc...) are kept as simple thin wrapper
+ * - 'enhanced' property contains enhanced actions
+ * - 'build' property contains enhanced build-related actions
+ * - 'deployment' contains enhanced deployment-related actions
+ * - arguments are passed as a key-value object where the key is the documented long form for `oc`
  * @module oc-helper
  */
 
-const log4js = require('log4js');
-const logger = log4js.getLogger('oc-helper');
+const util = require('./util.js')
+const logger = util.getLogger('oc-helper');
 const {spawn, spawnSync} = require('child_process');
 const fs = require('fs');
-const plugins = [require('./build.js'), require('./get.js'), require('./transformers.js')]
-
-const util = require('./util.js')
+const plugins = [require('./basic.js'), require('./build.js'), require('./get.js'), require('./transformers.js')]
 const asArray = util.asArray;
 
 //https://stackoverflow.com/questions/9781218/how-to-change-node-jss-console-font-color
@@ -57,6 +61,25 @@ function check_prerequisites(){
   }
 }
 
+function collectResourceNames(item, names){
+  if (item != null){
+    if (item instanceof Array){
+      item.forEach(subitem => {
+        collectResourceNames(subitem, names)
+      })
+    }else if ((item instanceof String) || (typeof item === "string")){
+      names.push(item)
+    }else{ //consider it a plain object, so get its name
+      if (item.kind === 'List'){
+        collectResourceNames(item.items, names)
+      }else{
+        names.push(`${item.kind}/${item.metadata.name}`)
+      }
+    }
+  }
+  return names
+}
+
 function toOcCommandArguments(client, action, args){
   const opt =  Object.assign({}, args)
   const globalOptions =  client.util.moveGlobalOptions(Object.assign({}, client.settings.options), opt)
@@ -64,11 +87,7 @@ function toOcCommandArguments(client, action, args){
   const names = []
 
   if (resources){
-    if (resources instanceof Array){
-      names.push(...resources)
-    }else{
-      names.push(resources)
-    }
+    collectResourceNames(resources, names)
     delete opt.resource
     delete opt.resources
     delete opt.names
@@ -89,16 +108,35 @@ function _ocSpawn (client) {
     const cmdArgs = toOcCommandArguments(client, action, args)
     const startTime = process.hrtime();
     return new Promise(function(resolve, reject) {
-      logger.info('>spawn',  ['oc'].concat(cmdArgs).join(' '))
+      logger.trace('>spawn',  ['oc'].concat(cmdArgs).join(' '))
       //logger.trace('ocSpawn', ['oc'].concat(cmdArgs).join(' '))
       const _options = {cwd:client.settings.cwd};
       resolve(spawn('oc', cmdArgs, _options));
     }).then(proc =>{
       proc.on('exit', (code) => {
         const duration = process.hrtime(startTime);
-        logger.info(`<spawn [${duration[0]}s]`,  ['oc'].concat(cmdArgs).join(' '))
+        logger.trace(`<spawn (${code})[${duration[0]}s]`,  ['oc'].concat(cmdArgs).join(' '))
       })
       return proc;
+    })
+  };
+}
+
+function _ocSpawnAndWait (client) {
+  /**
+   * @member _ocSpawnAndWait
+   * @function
+   * @param action {string}
+   * @param args {Object} 
+   * @return {Promise<ChildProcess>}
+   */
+  return function create (action, args = {}) {
+    return client._ocSpawn(action, args).then((process)=>{
+      return new Promise(function(resolve, reject) {
+        process.on('exit', (code) => {
+          resolve({'code':code})
+        });
+      })
     })
   };
 }
@@ -121,17 +159,19 @@ function _ocSpawnAndReturnStdout (client) {
         });
   
         process.stderr.on('data', (data) => {
-          logger.trace(`2>${data}`)
+          logger.error(`2>${data}`)
         })
         process.on('exit', (code) => {
-          resolve({'code':code, 'stdout':stdout})
+          if (code != "0") {
+            reject(Error(`'oc ${action}' command returned ${code}`))
+          }else{
+            resolve({'code':code, 'stdout':stdout})
+          }
         });
       })
     })
   };
 }
-
-const NS_PER_SEC = 1e9;
 
 function _ocSpawnSync (client) {
   /**
@@ -146,72 +186,13 @@ function _ocSpawnSync (client) {
       const cmdArgs = toOcCommandArguments(client, action, args)
       //logger.trace('ocSpawnSync', ['oc'].concat(cmdArgs).join(' '))
       const startTime = process.hrtime();
-      logger.info('>spawnSync',  ['oc'].concat(cmdArgs).join(' '))
+      logger.trace('>spawnSync',  ['oc'].concat(cmdArgs).join(' '))
       const _options = {cwd:client.settings.cwd, encoding:'utf-8'};
       const ret = spawnSync('oc', cmdArgs, _options);
       const duration = process.hrtime(startTime);
-      logger.info(`<spawnSync [${duration[0]}s]`,  ['oc'].concat(cmdArgs).join(' '))
+      logger.trace(`<spawnSync [${duration[0]}s]`,  ['oc'].concat(cmdArgs).join(' '))
       return ret;
     //});
-  };
-}
-
-function _oc (client) {
-  return function create (args = [], stdin = null) {
-    return new Promise(function(resolve, reject) {
-      const _args = asArray(client.settings.options).concat(asArray(args))
-      const _options = {cwd:client.settings.cwd};
-      logger.trace(`oc ${_args.join(' ')}    cwd: ${_options.cwd}`)
-      
-      //logger.trace(`cwd: ${_options.cwd}`)
-
-      const process = spawn('oc', _args, _options);
-      let stdout=''
-      if (stdin!=null){
-        stdin(process.stdin)
-      }
-      process.stdout.on('data', (data) => {
-        //logger.trace(`1>${data}`)
-        stdout+=data
-      });
-      process.stderr.on('data', (data) => {
-        logger.trace(`2>${data}`)
-      })
-      process.on('exit', (code) => {
-        resolve({'code':code, 'stdout':stdout})
-      }); 
-    });
-  };
-}
-
-function ocProcess (client) {
-  /** Helper for `oc process`. Each object is used to create a command line call to `oc process`
-   * @member process
-   * @function
-   * @param args {(Object|Object[])} one ore more template processing definition. The properties will become arguments for `oc process`
-   * @returns {Promise} Array of resources created or updated
-   * @see https://www.mankier.com/1/oc-process
-   */
-  return function create (args) {
-    let items=[]
-    let templates=[]
-
-    if (args instanceof Array){
-      templates.push(...args)
-    }else{
-      templates.push(args)
-    }
-
-    return templates.reduce((chain, template)=>{
-      return chain.then(()=>{
-        return client._ocSpawnAndReturnStdout('process', Object.assign({output:'json'}, template)).then((result)=>{
-          let output=JSON.parse(result.stdout)
-          items.push(...output.items)
-        });
-      })
-    }, Promise.resolve()).then(result => {
-      return Promise.resolve({'kind':'List', 'items':items, 'metadata':{'annotations':{'namespace':client.settings.options.namespace}}})
-    })
   };
 }
 
@@ -231,84 +212,30 @@ function ocLogsSync (client) {
 }
 
 
-function ocApply (client) {
-  /** Helper for `oc apply`
-   * @member apply
+
+
+function setBasicLabels (client) {
+  /**
+   * @member setBasicLabels
    * @function
-   * @param args {Object}
-   * @returns {Promise} Array of resources created or updated
-   * @see https://www.mankier.com/1/oc-apply
+   * @param result {Object} An OpenShift `List` (.kind = 'List')
    */
-  var create = function (args = {}) {
-    var items=null;
-    var tmpfile=null;
-    var _args = args
-    if (_args instanceof Object && _args.kind === util.CONSTANTS.KINDS.LIST && _args.items){
-      _args={filename:_args}
-    }
+  return (result, appName, envName, envId) => {
+    const commonLabels = {'app-name':appName}
+    const envLabels={'env-name':envName, 'env-id':envId}
+    const allLabels = Object.assign({'app':`${commonLabels['app-name']}-${envLabels['env-name']}-${envLabels['env-id']}`}, commonLabels, envLabels)
+    //Apply labels to the list itself
+    client.util.label(result, allLabels)
 
-    if (!(_args instanceof Array)) {
-      //logger.trace('!args instanceof Array')
-      if (!(_args['filename'] instanceof String)){
-        //logger.trace('!args["filename"] instanceof String')
-        items=_args['filename']
-        var json=JSON.stringify(items);
-        var jsonHash=util.hashString(json);
-        tmpfile=`/tmp/${jsonHash}.json`;
-
-        fs.writeFileSync(tmpfile, json)
-        _args['filename']=tmpfile
-        //stdin=(stdin)=>{stdin.setEncoding('utf-8'); stdin.write(json); stdin.end();}
+    result.items.forEach((item)=>{
+      if (client.util.getLabel(item, 'shared') === 'true'){
+        client.util.label(item, commonLabels)
+      }else{
+        client.util.label(item, allLabels)
       }
-    }
-
-    return client._ocSpawnAndReturnStdout('apply', Object.assign({output:'json'}, _args))
-    .then((result)=>{
-      fs.unlinkSync(tmpfile)
-      return result
     })
-    .then((result)=>{
-      //json output is in stream format
-      var items=result.stdout.split(/\n}\n{\n/);
-      
-      items.forEach((value, index)=>{
-        if (items.length > 1){
-          if (index == 0 ) {
-            value += '}'
-          }else if (index == items.length - 1 ) {
-            value = '{' + value
-          }else{
-            value = '{' + value + '}'
-          }
-        }
-        //logger.trace(`[${index}]=${value}`)
-        items[index]=JSON.parse(value)
-      });
-      //require('fs').writeFile('_oc_apply_stdout.json', result.stdout, 'utf8')
-      return items; //JSON.parse(result.stdout)
-    });
-
-  };
-
-  return create;
-}
-
-function prepare (client) {
-  return (list) => {
-    return new Promise((resolve, reject) => {
-      if (list.kind != 'List') throw "Expected {kind:'List'}"
-
-      list.items.forEach (item  => {
-        client.transformers.ENSURE_METADATA(item);
-        client.transformers.ADD_CHECKSUM_LABEL(item);
-        client.transformers.ENSURE_METADATA_NAMESPACE(item, list);
-        client.transformers.REMOVE_BUILD_CONFIG_TRIGGERS(item);
-        client.transformers.ADD_SOURCE_HASH(item);
-      })
-
-      return resolve(list);
-    });
-  };
+    return result
+  }
 }
 
 /**
@@ -330,12 +257,28 @@ function openShiftClient (settings = {}) {
   client['settings']=settings
   client['_ocSpawn'] = _ocSpawn(client)
   client['_ocSpawnAndReturnStdout'] = _ocSpawnAndReturnStdout(client)
+  client['_ocSpawnAndWait'] = _ocSpawnAndWait(client)
   client['_ocSpawnSync'] = _ocSpawnSync(client)
   //client['_raw'] = _oc(client)
-  client['process'] = ocProcess(client)
-  client['apply'] = ocApply(client)
-  client['prepare'] = prepare(client)
+  //client['process'] = ocProcess(client)
+  //client['apply'] = ocApply(client)
+  //client['prepare'] = prepare(client)
   client['logsToFileSync'] = ocLogsToFileSync(client)
+  client['setBasicLabels'] = setBasicLabels(client)
+
+  const argv= process.argv.slice(2)
+  for (let j = 0; j < argv.length; j++) {  
+    var item=argv[j]
+    if (item.startsWith('--')){
+      var marker=item.indexOf('=')
+      if (marker>0){
+        var key = item.substring(2, marker)
+        var value = item.substring(marker+1)
+        settings[key]=value
+      }
+    }
+  }
+
   
   
   //client['startBuild'] = ocStartBuild(client)

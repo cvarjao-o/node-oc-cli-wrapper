@@ -3,8 +3,6 @@
  * A module that offers a thin wrapper over `oc` command
  * @module oc-helper
  */
-const log4js = require('log4js');
-const logger = log4js.getLogger('oc-helper/oc-get');
 
 const {spawn, spawnSync} = require('child_process');
 //const path = require('path');
@@ -12,6 +10,7 @@ const {spawn, spawnSync} = require('child_process');
 const fs = require('fs');
 
 function getSync (client) {
+  const logger = client.util.getLogger('oc.get');
   return function create (args = {}) {
     //resource is a special parameter
     const globalOptions =  client.util.moveGlobalOptions(Object.assign({}, client.settings.options), args)

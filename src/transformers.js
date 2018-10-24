@@ -3,14 +3,13 @@
  * A module that offers a thin wrapper over `oc` command
  * @module oc-helper
  */
-const log4js = require('log4js');
-const logger = log4js.getLogger('oc-helper/transformers');
 const path = require('path');
 const fs = require('fs');
 
 const {spawnSync} = require('child_process');
 
 function transformers (client) {
+  const logger = client.util.getLogger('oc.helper.transformers');
   const CONSTANTS = client.util.CONSTANTS;
   return {
     ENSURE_METADATA: (resource, container)=>{

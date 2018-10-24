@@ -3,11 +3,9 @@
  * A module that offers a thin wrapper over `oc` command
  * @module oc-helper
  */
-//const log4js = require('log4js');
 const fs = require('fs');
 const util = require('./util.js');
 const logger = util.getLogger('oc-helper.build');
-
 const {spawn, spawnSync} = require('child_process');
 const path = require('path');
 //const crypto = require('crypto')
@@ -51,7 +49,7 @@ function hashDirectory (dir) {
 
 function _startBuild (client, buildConfig) {
   //return (builds) => {
-    return new Promise(function(resolve, reject){
+    return new Promise(async function(resolve, reject){
       //ToDo:CHeck if it needs new build
       const LOG = util.getLogger(`oc-helper.build.${fullName(buildConfig)}`)
       const tmpfile=`/tmp/${util.hashObject(buildConfig)}.tar`
@@ -72,7 +70,6 @@ function _startBuild (client, buildConfig) {
       }
       getBuildConfigInputImages(buildConfig).forEach(sourceImage => {
         if (sourceImage.kind === CONSTANTS.KINDS.IMAGE_STREAM_TAG){
-
           var ocGet = client._ocSpawnSync('get', {'resource':`${sourceImage.kind}/${sourceImage.name}`, 'output':'jsonpath={.image.metadata.name}'});
           var imageName = ocGet.stdout.trim()
           var imageStreamImageName = sourceImage.name.split(':')[0] + '@' + imageName
@@ -96,18 +93,20 @@ function _startBuild (client, buildConfig) {
         throw `Expected kind=${CONSTANTS.KINDS.IMAGE_STREAM_TAG}, but found kind=${outputTo.kind} for ${fullName(buildConfig)}.spec.output.to`
       }
       
-      var ocGetOutputImageStream = client.getSync({'resource':`${CONSTANTS.KINDS.IMAGE_STREAM}/${outputTo.name.split(':')[0]}`});
-      var images = JSON.parse(ocGetOutputImageStream).status.tags
+      var ocGetOutputImageStream = await client.get(`${CONSTANTS.KINDS.IMAGE_STREAM}/${outputTo.name.split(':')[0]}`);
+      var tags = ocGetOutputImageStream.status.tags
       var foundImageStreamImage = null
       var foundBuild = null
 
-      images.forEach(tag => {
+
+      //images.forEach(async tag => {
+      while (tags.length > 0){
+        const tag = tags.shift()
         if (!foundImageStreamImage){
           var resources= tag.items.map((image)=>{
             return `${CONSTANTS.KINDS.IMAGE_STREAM_IMAGE}/${outputTo.name.split(':')[0]}@${image.image}`
           })
-          var ocGet = client._ocSpawnSync('get', {'resources':resources, 'output':'json'})
-          var images = JSON.parse(ocGet.stdout.trim());
+          var images = await client.get(resources);
           if (images.kind !== util.CONSTANTS.KINDS.LIST){
             images={items:[images]}
           }
@@ -127,7 +126,8 @@ function _startBuild (client, buildConfig) {
             }))
           })
         }
-      })
+      }
+      //}) //end forEach
 
       const output = {
         buildConfig:{
@@ -165,7 +165,7 @@ function _startBuild (client, buildConfig) {
         LOG.info(`Reusing '${fullName(output.imageStreamImage)}' created by '${fullName(output.build)}'`)
         resolve(output)
       }else{
-        client.apply({filename:{kind:CONSTANTS.KINDS.LIST, items:[buildConfig]}}).then(() => {
+        client.apply(buildConfig).then(() => {
           return client.startBuild(args)
         }).then(build =>{
           //setTimeout(function(){
@@ -182,9 +182,9 @@ function _startBuild (client, buildConfig) {
                 name:build.metadata.name,
                 namespace:build.metadata.namespace,
                 annotations:{
-                  'openshift.io/build-config.name':build.annotations['openshift.io/build-config.name'],
-                  'openshift.io/build.number':build.annotations['openshift.io/build.number'],
-                  'openshift.io/build.pod-name':build.annotations['openshift.io/build.pod-name']
+                  'openshift.io/build-config.name':build.metadata.annotations['openshift.io/build-config.name'],
+                  'openshift.io/build.number':build.metadata.annotations['openshift.io/build.number'],
+                  'openshift.io/build.pod-name':build.metadata.annotations['openshift.io/build.pod-name']
                 }
               }
             }
@@ -401,10 +401,7 @@ function startBuild (client) {
       var items=result.stdout.trim().split(/\n/);
       return items[0]; //JSON.parse(result.stdout)
     }).then( (result) => {
-      return client._ocSpawnAndReturnStdout('get', {resource:result, output:'json', export:'true'})
-      .then(result => {
-        return JSON.parse(result.stdout.trim())
-      })
+      return client.get(result, {export:'true'})
     })
   };
 }

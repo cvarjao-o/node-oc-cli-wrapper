@@ -14,7 +14,8 @@ const CONSTANTS = Object.freeze({
     BUILD_CONFIG: 'BuildConfig',
     IMAGE_STREAM: 'ImageStream',
     IMAGE_STREAM_TAG: 'ImageStreamTag',
-    IMAGE_STREAM_IMAGE: 'ImageStreamImage'
+    IMAGE_STREAM_IMAGE: 'ImageStreamImage',
+    DEPLOYMENT_CONFIG:'DeploymentConfig'
   },
   ENV:{
     BUILD_HASH: '_BUILD_HASH'
@@ -108,8 +109,59 @@ function moveGlobalOptions (target, source) {
 function getLogger(name){
   return log4js.getLogger(name)
 }
+
 function configureLogging(args){
+  //console.log('<>configureLogging')
   log4js.configure(args)
+}
+/**
+ * 
+ * @param {Object} resource 
+ * @param {string} label 
+ */
+function getLabel(resource, label){
+  return (resource.metadata.labels || {})[label]
+}
+
+/**
+ * Label an object/resource in-place by modifying .metadata.labels
+ * @param {Object} resource 
+ * @param {tags} resource 
+ */
+function label(resource, labels = {}){
+  for (var label in labels) {
+    if(!labels.hasOwnProperty(label)) continue;
+    resource.metadata = resource.metadata || {}
+    resource.metadata.labels = resource.metadata.labels || {}
+    resource.metadata.labels[label]=labels[label]
+  }
+}
+
+/**
+ * Annotate an object/resource in-place by modifying .metadata.annotations
+ * @param {Object} resource 
+ * @param {tags} resource 
+ */
+function annotate(resource, annotations = {}){
+  for (var annotation in annotations) {
+    if(!annotations.hasOwnProperty(annotation)) continue;
+    resource.metadata = resource.metadata || {}
+    resource.metadata.annotations = resource.metadata.annotations || {}
+    resource.metadata.annotations[annotation]=annotations[annotation]
+  }
+}
+
+/**
+ * 
+ * @param {Object} resource 
+ * @param {string} annotation 
+ */
+function getAnnotation(resource, annotation){
+  return (resource.metadata.annotations || {})[annotation]
+}
+
+function isPlainObject(o) {
+  return (o != null) && (typeof o === 'object') &&  (o.constructor === Object)
 }
 
 module.exports = exports = {
@@ -121,5 +173,9 @@ module.exports = exports = {
   asArray: asArray,
   moveGlobalOptions: moveGlobalOptions,
   getLogger:getLogger,
-  configureLogging: configureLogging
+  configureLogging: configureLogging,
+  label: label,
+  annotate: annotate,
+  getLabel: getLabel,
+  getAnnotation: getAnnotation
 }
