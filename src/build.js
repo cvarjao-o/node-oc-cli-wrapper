@@ -94,7 +94,7 @@ function _startBuild (client, buildConfig) {
       }
       
       var ocGetOutputImageStream = await client.get(`${CONSTANTS.KINDS.IMAGE_STREAM}/${outputTo.name.split(':')[0]}`);
-      var tags = ocGetOutputImageStream.status.tags
+      var tags = ocGetOutputImageStream.status.tags || []
       var foundImageStreamImage = null
       var foundBuild = null
 
@@ -323,7 +323,7 @@ function startBuilds (client) {
     //var cache = new Map()
 
     var buildConfigs = []
-    resources.forEach((res)=>{
+    resources.items.forEach((res)=>{
       var resourceFullName=fullName(res)
       var entry = {item:res, fullName:resourceFullName}
 

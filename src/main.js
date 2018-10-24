@@ -115,7 +115,7 @@ function _ocSpawn (client) {
     }).then(proc =>{
       proc.on('exit', (code) => {
         const duration = process.hrtime(startTime);
-        logger.trace(`<spawn (${code})[${duration[0]}s]`,  ['oc'].concat(cmdArgs).join(' '))
+        logger.info(['oc'].concat(cmdArgs).join(' '),` # (${code}) [${duration[0]}s]`)
       })
       return proc;
     })
@@ -190,7 +190,7 @@ function _ocSpawnSync (client) {
       const _options = {cwd:client.settings.cwd, encoding:'utf-8'};
       const ret = spawnSync('oc', cmdArgs, _options);
       const duration = process.hrtime(startTime);
-      logger.trace(`<spawnSync [${duration[0]}s]`,  ['oc'].concat(cmdArgs).join(' '))
+      logger.info(['oc'].concat(cmdArgs).join(' ') + ` # (${ret.status}) [${duration[0]}s]`)
       return ret;
     //});
   };

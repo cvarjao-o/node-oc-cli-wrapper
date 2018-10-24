@@ -49,20 +49,15 @@ function transformers (client) {
 
           //find . -type f -exec git hash-object -t blob --no-filters '{}' \;
           var walk=(start, basedir)=>{
-            var files=fs.readdirSync(absoluteContextDir)
             var stat = fs.statSync(start);
             if (stat.isDirectory()) {
-              files.reduce(function (acc, name) {
-                var abspath = path.join(start, name);
-                //hashes.push()
-                if (fs.statSync(abspath).isDirectory()) {
-                  walk(abspath, basedir)
-                }else{
-                  var hash = spawnSync('git', ['hash-object', '-t', 'blob', '--no-filters', abspath], {'cwd':client.settings.cwd}).stdout.toString().trim()
-                  //console.dir({'name':name, 'hash':hash})
-                  hashes.push({'name':abspath.substr(basedir.length + 1), 'hash':hash})
-                }
-              }, null)
+              var files=fs.readdirSync(start)
+              files.forEach((name)=>{
+                walk(path.join(start, name), basedir)
+              })
+            }else{
+              var hash = spawnSync('git', ['hash-object', '-t', 'blob', '--no-filters', start], {'cwd':client.settings.cwd}).stdout.toString().trim()
+              hashes.push({'name':start.substr(basedir.length + 1), 'hash':hash})
             }
           }
 

@@ -6,11 +6,30 @@
 const fs = require('fs');
 
 module.exports = exports = {
+  fetchResourceVersion: function (client) {
+    return (list) => {
+      return new Promise(async (resolve, reject) => {
+        if (list.kind !== 'List') throw "Expected {kind:'List'}"
+        var items = []
+        var index = new Map()
+        list.items.forEach (item  => {
+          items.push(`${item.kind}/${item.metadata.name}`)
+          index.set(`${item.kind}/${item.metadata.name}`, item)
+        })
+
+        var exitingItems = await client.get(items, {'ignore-not-found':'true'})
+        exitingItems.items.forEach (item  => {
+          var newItem = index.get(`${item.kind}/${item.metadata.name}`)
+          newItem.metadata.resourceVersion = item.metadata.resourceVersion
+        })
+        return resolve(list);
+      });
+    };
+  },
   prepare: function (client) {
     return (list) => {
-      return new Promise((resolve, reject) => {
+      return new Promise(async (resolve, reject) => {
         if (list.kind !== 'List') throw "Expected {kind:'List'}"
-  
         list.items.forEach (item  => {
           client.transformers.ENSURE_METADATA(item);
           client.transformers.ADD_CHECKSUM_LABEL(item);
@@ -18,7 +37,6 @@ module.exports = exports = {
           client.transformers.REMOVE_BUILD_CONFIG_TRIGGERS(item);
           client.transformers.ADD_SOURCE_HASH(item);
         })
-  
         return resolve(list);
       });
     };
@@ -87,7 +105,16 @@ module.exports = exports = {
           if (refName!=null){
             const refResource= await client.get(`${resource.kind}/${refName}`)
             resource.data =  refResource.data
-            delete resource.stringData
+            const tmpStringData=resource.stringData
+            resource.stringData = {}
+            if (resource.kind === "Secret" && tmpStringData['metadata.name']){
+              resource.stringData['metadata.name'] = resource.metadata.name
+            }
+            var preserveFields = client.util.getAnnotation(resource, "as-copy-of/preserve");
+            if (resource.kind === "Secret"  && preserveFields){
+              const refResource= await client.get(`${resource.kind}/${resource.metadata.name}`, {'ignore-not-found':'true'})
+              resource.data[preserveFields] = refResource.data[preserveFields]
+            }
           }
         }else if (resource.kind === "Route"){
           var refName=client.util.getAnnotation(resource, "tls/secretName")
@@ -115,7 +142,7 @@ module.exports = exports = {
      * @returns {Promise} Array of resources created or updated
      * @see https://www.mankier.com/1/oc-apply
      */
-    return function (resources, args = {}) {
+    return async function (resources, args = {}) {
       if ((resources != null) && resources.kind == null) throw "Expected an OpenShift object with a 'kind' property"
       if ((resources == null) && args['filename'] == null) throw "Expected a 'resources' or 'args.filename' property to be defined"
 
@@ -124,6 +151,7 @@ module.exports = exports = {
       var _args = args
 
       if (resources != null){
+        await client.fetchResourceVersion(resources)
         _args['filename']=resources
       }
 
@@ -142,30 +170,24 @@ module.exports = exports = {
       }
       //}
   
-      return client._ocSpawnAndReturnStdout('apply', Object.assign({output:'json'}, _args))
+      return client._ocSpawnAndReturnStdout('apply', Object.assign({output:'name'}, _args))
       .then((result)=>{
         fs.unlinkSync(tmpfile)
         return result
       })
-      .then((result)=>{
+      .then(async (result)=>{
         //json output is in stream format
-        var items=result.stdout.split(/\n}\n{\n/);
-        
-        items.forEach((value, index)=>{
-          if (items.length > 1){
-            if (index == 0 ) {
-              value += '}'
-            }else if (index == items.length - 1 ) {
-              value = '{' + value
-            }else{
-              value = '{' + value + '}'
-            }
-          }
-          //logger.trace(`[${index}]=${value}`)
-          items[index]=JSON.parse(value)
-        });
-        //require('fs').writeFile('_oc_apply_stdout.json', result.stdout, 'utf8')
-        return items; //JSON.parse(result.stdout)
+        var items=result.stdout.trim().split(/\n/);
+        var newResult = {}
+        var outputItems = await client.get(items)
+        if (resources != null && resources.kind == 'List'){
+          delete outputItems.metadata
+          Object.assign(newResult, resources)
+          Object.assign(newResult, outputItems)
+        }else{
+          newResult = outputItems;
+        }
+        return newResult;
       });
   
     };
@@ -173,6 +195,7 @@ module.exports = exports = {
   'applyAndWait':function (client) {
     return async function (resources) {
       const existingDC= await client._ocSpawnAndReturnStdout('get', {resource:'dc', 'selector':`app=${resources.metadata.labels['app']}`, output:'jsonpath={range .items[*]}{.metadata.name}{"\\t"}{.spec.replicas}{"\\t"}{.status.latestVersion}{"\\n"}{end}'})
+      //
       return client.apply(resources).then(async result => {
         const newDCs = await client._ocSpawnAndReturnStdout('get', {resource:'dc', 'selector':`app=${resources.metadata.labels['app']}`, output:'jsonpath={range .items[*]}{.metadata.name}{"\\t"}{.spec.replicas}{"\\t"}{.status.latestVersion}{"\\n"}{end}'})
         if (existingDC.stdout != newDCs.stdout){
