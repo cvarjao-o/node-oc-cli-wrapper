@@ -46,7 +46,22 @@ echo "npm: $(npm --version) (from $(which npm))"
 if [ ! -d "node_modules" ]; then
   #rm -rf node_modules
   #npm list -g --depth 0
-  NODE_ENV=PRODUCTION "${NODE_HOME}/bin/npm" "ci"
+  #shasum -a 256 packages.json
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    PACKAGE_HASH="$(shasum -p -a 256 package-lock.json | awk '{ print $1 }')"
+  else
+    PACKAGE_HASH="$(sha256sum package-lock.json | awk '{ print $1 }')"
+  fi
+  if [ -f "/tmp/${PACKAGE_HASH}.tar.gz" ]; then
+    #untar
+    touch "/tmp/${PACKAGE_HASH}.tar.gz"
+    tar -xzf "/tmp/${PACKAGE_HASH}.tar.gz"
+  else
+    NODE_ENV=PRODUCTION "${NODE_HOME}/bin/npm" "ci"
+    tar -zcf "${PACKAGE_HASH}.tar.gz" node_modules
+    mv -f "${PACKAGE_HASH}.tar.gz" "/tmp/${PACKAGE_HASH}.tar.gz"
+  fi 
+  
   #NODE_ENV=PRODUCTION "${NODE_HOME}/bin/npm" "install" --no-audit
 fi
 

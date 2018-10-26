@@ -56,6 +56,12 @@ function check_prerequisites(){
     errors+='stderr:'+proc2.stderr+'\n'
   }
 
+  //oc -n csnr-devops-lab-deploy policy add-role-to-user admin system:serviceaccount:csnr-devops-lab-tools:jenkins-cvarjao
+  
+  //oc -n csnr-devops-lab-deploy auth can-i create bc
+  //oc -n csnr-devops-lab-deploy auth can-i create dc
+  //oc -n csnr-devops-lab-deploy auth can-i create pod
+  //oc -n csnr-devops-lab-deploy auth can-i create is
   if (errors.length > 0){
     throw `Prerequisites not met!\n${errors}`
   }
