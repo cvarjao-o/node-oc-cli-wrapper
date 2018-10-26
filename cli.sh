@@ -58,7 +58,7 @@ if [ ! -d "node_modules" ]; then
     tar -xzf "/tmp/${PACKAGE_HASH}.tar.gz"
   else
     NODE_ENV=PRODUCTION "${NODE_HOME}/bin/npm" "ci"
-    tar -zcf "${PACKAGE_HASH}.tar.gz" node_modules
+    tar -czf "${PACKAGE_HASH}.tar.gz" node_modules
     mv -f "${PACKAGE_HASH}.tar.gz" "/tmp/${PACKAGE_HASH}.tar.gz"
   fi 
   
