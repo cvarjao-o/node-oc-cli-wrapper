@@ -111,7 +111,7 @@ function _ocSpawn (client) {
       logger.trace('>spawn',  ['oc'].concat(cmdArgs).join(' '))
       //logger.trace('ocSpawn', ['oc'].concat(cmdArgs).join(' '))
       const _options = {cwd:client.settings.cwd};
-      resolve(spawn('oc', cmdArgs, _options));
+      resolve(spawn('oc', cmdArgs, _options))
     }).then(proc =>{
       proc.on('exit', (code) => {
         const duration = process.hrtime(startTime);
@@ -163,7 +163,7 @@ function _ocSpawnAndReturnStdout (client) {
         })
         process.on('exit', (code) => {
           if (code != "0") {
-            reject(Error(`'oc ${action}' command returned ${code}`))
+            reject(new Error(`'oc ${action}' command returned ${code}`))
           }else{
             resolve({'code':code, 'stdout':stdout})
           }

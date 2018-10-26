@@ -69,15 +69,18 @@ function restore(hash){
     it('apply', function() {
       return new Promise(function(resolve, reject) {
         resolve(restore(cache.get('prepared-state')))
-      }).then(result => {
+      })
+      .then(result => {
         return oc.fetchSecretsAndConfigMaps(result)
-      }).then(result => {
+      })
+      .then(result => {
         expect(result.kind).to.equal('List');
         expect(result.items.length).to.equal(5);
         return oc.importImageStreams(result, deploymentVersion, buildNamespace, buildVersion).then(result=>{
           return oc.applyAndWait(result);
         })
-      }).then(result => {
+      })
+      .then(result => {
         //console.dir(result)
         console.log('done!')
       })
